@@ -1,14 +1,12 @@
 [package]
 name = "praborrow-defense"
-version = "0.1.1"
-edition = "2024"
-authors = ["ireddragonicy"]
-description = "Procedural macros for the Garuda invariant verification system. Generates runtime checks to enforce constitutional integrity on data structures."
-license = "MIT"
-repository = "https://github.com/ireddragonicy/praborrow-defense"
-documentation = "https://docs.rs/praborrow-defense"
-readme = "README.md"
-keywords = ["macro", "invariant", "validation", "proc-macro"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Procedural macros for invariant verification. Generates runtime checks and SMT-based formal verification."
+keywords = ["macro", "invariant", "validation", "proc-macro", "formal-verification"]
 categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
 
 [lib]
@@ -18,3 +16,4 @@ proc-macro = true
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 quote = "1.0"
 proc-macro2 = "1.0"
+
