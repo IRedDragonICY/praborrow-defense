@@ -12,10 +12,10 @@ use praborrow_core::CheckProtocol; // Trait definition
 
 #[derive(Constitution)]
 struct StateBudget {
-    #[invariant("self.amount > 0")]
+    #[invariant(self.amount > 0)]
     amount: i32,
     
-    #[invariant("self.year >= 2024")]
+    #[invariant(self.year >= 2024)]
     year: i32,
 }
 

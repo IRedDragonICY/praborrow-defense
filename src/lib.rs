@@ -37,7 +37,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Meta, Lit, Type, Ident};
+use syn::{parse_macro_input, DeriveInput, Data, Fields, Meta, Type, Ident};
 
 /// Information about a field with invariants.
 #[allow(dead_code)] // Reserved for future Z3 backend integration
@@ -87,17 +87,14 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                 for attr in &field.attrs {
                     if let Meta::List(meta_list) = &attr.meta {
                         if meta_list.path.is_ident("invariant") {
-                            // Parse the invariant condition string
-                            match meta_list.parse_args::<Lit>() {
-                                Ok(Lit::Str(lit_str)) => {
-                                    let condition_str = lit_str.value();
+                            // Parse the invariant condition expression directly
+                            match meta_list.parse_args::<syn::Expr>() {
+                                Ok(expr) => {
+                                    let condition_tokens = quote! { #expr };
+                                    let condition_str = condition_tokens.to_string();
+                                    
                                     field_invariants.push(condition_str.clone());
                                     invariant_strings.push(condition_str.clone());
-                                    
-                                    // Parse string into TokenStream for runtime check
-                                    let condition_tokens: proc_macro2::TokenStream = condition_str
-                                        .parse()
-                                        .expect("Invalid invariant condition syntax");
                                     
                                     let error_msg = format!(
                                         "CONSTITUTIONAL CRISIS: Invariant '{}' breached.",
