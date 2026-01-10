@@ -85,95 +85,95 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
     let mut field_infos: Vec<FieldInfo> = Vec::new();
     let mut all_fields: Vec<(Ident, Type)> = Vec::new();
 
-    if let Data::Struct(syn::DataStruct { fields: Fields::Named(fields), .. }) = &input.data {
-            for field in &fields.named {
-                let field_name = field.ident.clone().expect("Named field must have ident");
-                let field_type = field.ty.clone();
-                all_fields.push((field_name.clone(), field_type.clone()));
+    if let Data::Struct(syn::DataStruct {
+        fields: Fields::Named(fields),
+        ..
+    }) = &input.data
+    {
+        for field in &fields.named {
+            let field_name = field.ident.clone().expect("Named field must have ident");
+            let field_type = field.ty.clone();
+            all_fields.push((field_name.clone(), field_type.clone()));
 
-                let mut field_invariants = Vec::new();
+            let mut field_invariants = Vec::new();
 
-                for attr in &field.attrs {
-                    if let Meta::List(meta_list) = &attr.meta {
-                        #[allow(clippy::collapsible_if)]
-                        if meta_list.path.is_ident("invariant") {
-                            // Parse the invariant condition expression directly
-                            match meta_list.parse_args::<syn::Expr>() {
-                                Ok(expr) => {
-                                    // Extract the invariant string and tokens
-                                    let (condition_str, condition_tokens) =
-                                        if let syn::Expr::Lit(syn::ExprLit {
-                                            lit: syn::Lit::Str(lit_str),
-                                            ..
-                                        }) = &expr
-                                        {
-                                            let s = lit_str.value();
-                                            // For string literals, we must parse the content to get tokens for runtime check
-                                            match syn::parse_str::<syn::Expr>(&s) {
-                                                Ok(e) => (s, quote! { #e }),
-                                                Err(err) => {
-                                                    return syn::Error::new_spanned(
-                                                        lit_str,
-                                                        format!(
-                                                            "Syntax error in invariant string: {}",
-                                                            err
-                                                        ),
-                                                    )
-                                                    .to_compile_error()
-                                                    .into();
-                                                }
-                                            }
-                                        } else {
-                                            let tokens = quote! { #expr };
-                                            (tokens.to_string(), tokens)
-                                        };
-
-                                    // Validate invariant syntax at compile time
-                                    if let Err(e) =
-                                        praborrow_prover::parser::ExpressionParser::parse(
-                                            &condition_str,
-                                        )
+            for attr in &field.attrs {
+                if let Meta::List(meta_list) = &attr.meta {
+                    #[allow(clippy::collapsible_if)]
+                    if meta_list.path.is_ident("invariant") {
+                        // Parse the invariant condition expression directly
+                        match meta_list.parse_args::<syn::Expr>() {
+                            Ok(expr) => {
+                                // Extract the invariant string and tokens
+                                let (condition_str, condition_tokens) =
+                                    if let syn::Expr::Lit(syn::ExprLit {
+                                        lit: syn::Lit::Str(lit_str),
+                                        ..
+                                    }) = &expr
                                     {
-                                        let err_msg = format!("Invalid invariant syntax: {}", e);
-                                        return syn::Error::new_spanned(&expr, err_msg)
-                                            .to_compile_error()
-                                            .into();
-                                    }
+                                        let s = lit_str.value();
+                                        // For string literals, we must parse the content to get tokens for runtime check
+                                        match syn::parse_str::<syn::Expr>(&s) {
+                                            Ok(e) => (s, quote! { #e }),
+                                            Err(err) => {
+                                                return syn::Error::new_spanned(
+                                                    lit_str,
+                                                    format!(
+                                                        "Syntax error in invariant string: {}",
+                                                        err
+                                                    ),
+                                                )
+                                                .to_compile_error()
+                                                .into();
+                                            }
+                                        }
+                                    } else {
+                                        let tokens = quote! { #expr };
+                                        (tokens.to_string(), tokens)
+                                    };
 
-                                    field_invariants.push(condition_str.clone());
-                                    invariant_strings.push(condition_str.clone());
+                                // Validate invariant syntax at compile time
+                                if let Err(e) = praborrow_prover::parser::ExpressionParser::parse(
+                                    &condition_str,
+                                ) {
+                                    let err_msg = format!("Invalid invariant syntax: {}", e);
+                                    return syn::Error::new_spanned(&expr, err_msg)
+                                        .to_compile_error()
+                                        .into();
+                                }
 
-                                    let error_msg = format!(
-                                        "CONSTITUTIONAL CRISIS: Invariant '{}' breached.",
-                                        condition_str
-                                    );
-                                    let error_msg_lit = syn::LitStr::new(
-                                        &error_msg,
-                                        proc_macro2::Span::call_site(),
-                                    );
+                                field_invariants.push(condition_str.clone());
+                                invariant_strings.push(condition_str.clone());
 
-                                    runtime_checks.push(quote! {
+                                let error_msg = format!(
+                                    "CONSTITUTIONAL CRISIS: Invariant '{}' breached.",
+                                    condition_str
+                                );
+                                let error_msg_lit =
+                                    syn::LitStr::new(&error_msg, proc_macro2::Span::call_site());
+
+                                runtime_checks.push(quote! {
                                         if !(#condition_tokens) {
                                             return Err(praborrow_core::ConstitutionError::InvariantViolation(#error_msg_lit.to_string()));
                                         }
                                     });
-                                }
-                                Err(e) => {
-                                    return TokenStream::from(e.to_compile_error());
-                                }
+                            }
+                            Err(e) => {
+                                return TokenStream::from(e.to_compile_error());
                             }
                         }
                     }
                 }
-
-                if !field_invariants.is_empty() {
-                    field_infos.push(FieldInfo {
-                        name: field_name,
-                        ty: field_type,
-                        invariants: field_invariants,
-                    });
-                }
             }
+
+            if !field_invariants.is_empty() {
+                field_infos.push(FieldInfo {
+                    name: field_name,
+                    ty: field_type,
+                    invariants: field_invariants,
+                });
+            }
+        }
     }
 
     // Generate the invariant strings as a static array
