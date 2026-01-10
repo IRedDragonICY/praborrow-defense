@@ -182,13 +182,13 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
             if is_unsigned {
                  quote! {
                     #name_str => {
-                        Ok(ast::Int::from_u64(ctx, self.0.#name as u64))
+                        Ok(ast::Int::from_u64(self.0.#name as u64))
                     }
                 }
             } else {
                  quote! {
                     #name_str => {
-                        Ok(ast::Int::from_i64(ctx, self.0.#name as i64))
+                        Ok(ast::Int::from_i64(self.0.#name as i64))
                     }
                 }
             }
@@ -223,17 +223,16 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                 ctx: &praborrow_prover::SmtContext
             ) -> Result<praborrow_prover::VerificationToken, praborrow_prover::ProofError> {
                 use praborrow_prover::parser::FieldValueProvider;
-                use praborrow_prover::{Context, ast};
+                use praborrow_prover::ast;
 
                 // Create a field provider for this instance
                 struct FieldProvider<'a>(&'a #name);
                 
-                impl<'a, 'ctx> FieldValueProvider<'ctx> for FieldProvider<'a> {
+                impl<'a> FieldValueProvider for FieldProvider<'a> {
                     fn get_field_z3(
                         &self,
-                        ctx: &'ctx Context,
                         field_name: &str
-                    ) -> Result<ast::Int<'ctx>, praborrow_prover::ProofError> {
+                    ) -> Result<ast::Int, praborrow_prover::ProofError> {
                         match field_name {
                             #(#field_match_arms)*
                             _ => Err(praborrow_prover::ProofError::ParseError(
