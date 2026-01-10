@@ -1,5 +1,5 @@
-use praborrow_defense::Constitution;
 use praborrow_core::CheckProtocol;
+use praborrow_defense::Constitution;
 
 #[derive(Constitution)]
 struct TestStruct {
@@ -13,7 +13,10 @@ fn test_no_panic() {
     let result = t.enforce_law();
     assert!(result.is_err());
     let err = result.err().unwrap();
-    assert!(err.to_string().contains("Invariant 'self.val > 10' breached"));
+    assert!(
+        err.to_string()
+            .contains("Invariant 'self.val > 10' breached")
+    );
 }
 
 #[test]

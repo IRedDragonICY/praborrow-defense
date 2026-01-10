@@ -37,7 +37,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Meta, Type, Ident};
+use syn::{Data, DeriveInput, Fields, Ident, Meta, Type, parse_macro_input};
 
 /// Information about a field with invariants.
 #[allow(dead_code)] // Reserved for future Z3 backend integration
@@ -50,12 +50,22 @@ struct FieldInfo {
 /// Checks if a type is a supported integer type.
 fn is_integer_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
+        #[allow(clippy::collapsible_if)]
         if let Some(segment) = type_path.path.segments.last() {
             let ident = segment.ident.to_string();
             return matches!(
                 ident.as_str(),
-                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
-                "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+                "i8" | "i16"
+                    | "i32"
+                    | "i64"
+                    | "i128"
+                    | "isize"
+                    | "u8"
+                    | "u16"
+                    | "u32"
+                    | "u64"
+                    | "u128"
+                    | "usize"
             );
         }
     }
@@ -75,40 +85,55 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
     let mut field_infos: Vec<FieldInfo> = Vec::new();
     let mut all_fields: Vec<(Ident, Type)> = Vec::new();
 
-    if let Data::Struct(data) = &input.data {
-        if let Fields::Named(fields) = &data.fields {
+    if let Data::Struct(syn::DataStruct { fields: Fields::Named(fields), .. }) = &input.data {
             for field in &fields.named {
                 let field_name = field.ident.clone().expect("Named field must have ident");
                 let field_type = field.ty.clone();
                 all_fields.push((field_name.clone(), field_type.clone()));
-                
+
                 let mut field_invariants = Vec::new();
-                
+
                 for attr in &field.attrs {
                     if let Meta::List(meta_list) = &attr.meta {
+                        #[allow(clippy::collapsible_if)]
                         if meta_list.path.is_ident("invariant") {
                             // Parse the invariant condition expression directly
                             match meta_list.parse_args::<syn::Expr>() {
                                 Ok(expr) => {
                                     // Extract the invariant string and tokens
-                                    let (condition_str, condition_tokens) = if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(lit_str), .. }) = &expr {
-                                        let s = lit_str.value();
-                                        // For string literals, we must parse the content to get tokens for runtime check
-                                        match syn::parse_str::<syn::Expr>(&s) {
-                                            Ok(e) => (s, quote! { #e }),
-                                            Err(err) => {
-                                                return syn::Error::new_spanned(lit_str, format!("Syntax error in invariant string: {}", err))
+                                    let (condition_str, condition_tokens) =
+                                        if let syn::Expr::Lit(syn::ExprLit {
+                                            lit: syn::Lit::Str(lit_str),
+                                            ..
+                                        }) = &expr
+                                        {
+                                            let s = lit_str.value();
+                                            // For string literals, we must parse the content to get tokens for runtime check
+                                            match syn::parse_str::<syn::Expr>(&s) {
+                                                Ok(e) => (s, quote! { #e }),
+                                                Err(err) => {
+                                                    return syn::Error::new_spanned(
+                                                        lit_str,
+                                                        format!(
+                                                            "Syntax error in invariant string: {}",
+                                                            err
+                                                        ),
+                                                    )
                                                     .to_compile_error()
                                                     .into();
+                                                }
                                             }
-                                        }
-                                    } else {
-                                        let tokens = quote! { #expr };
-                                        (tokens.to_string(), tokens)
-                                    };
-                                    
+                                        } else {
+                                            let tokens = quote! { #expr };
+                                            (tokens.to_string(), tokens)
+                                        };
+
                                     // Validate invariant syntax at compile time
-                                    if let Err(e) = praborrow_prover::parser::ExpressionParser::parse(&condition_str) {
+                                    if let Err(e) =
+                                        praborrow_prover::parser::ExpressionParser::parse(
+                                            &condition_str,
+                                        )
+                                    {
                                         let err_msg = format!("Invalid invariant syntax: {}", e);
                                         return syn::Error::new_spanned(&expr, err_msg)
                                             .to_compile_error()
@@ -117,16 +142,16 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
 
                                     field_invariants.push(condition_str.clone());
                                     invariant_strings.push(condition_str.clone());
-                                    
+
                                     let error_msg = format!(
                                         "CONSTITUTIONAL CRISIS: Invariant '{}' breached.",
                                         condition_str
                                     );
                                     let error_msg_lit = syn::LitStr::new(
                                         &error_msg,
-                                        proc_macro2::Span::call_site()
+                                        proc_macro2::Span::call_site(),
                                     );
-                                    
+
                                     runtime_checks.push(quote! {
                                         if !(#condition_tokens) {
                                             return Err(praborrow_core::ConstitutionError::InvariantViolation(#error_msg_lit.to_string()));
@@ -140,7 +165,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                         }
                     }
                 }
-                
+
                 if !field_invariants.is_empty() {
                     field_infos.push(FieldInfo {
                         name: field_name,
@@ -149,18 +174,19 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                     });
                 }
             }
-        }
     }
 
     // Generate the invariant strings as a static array
     let invariant_count = invariant_strings.len();
-    let invariant_literals: Vec<_> = invariant_strings.iter()
+    let invariant_literals: Vec<_> = invariant_strings
+        .iter()
         .map(|s| syn::LitStr::new(s, proc_macro2::Span::call_site()))
         .collect();
 
     // Generate field value extraction for hash computation
     // Only include integer fields for now
-    let hash_fields: Vec<_> = all_fields.iter()
+    let hash_fields: Vec<_> = all_fields
+        .iter()
         .filter(|(_, ty)| is_integer_type(ty))
         .map(|(name, _)| {
             quote! {
@@ -171,22 +197,29 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
 
     // Generate field provider implementation
     // Maps field names to Z3 AST values
-    let field_match_arms: Vec<_> = all_fields.iter()
+    let field_match_arms: Vec<_> = all_fields
+        .iter()
         .filter(|(_, ty)| is_integer_type(ty))
         .map(|(name, ty)| {
             let name_str = name.to_string();
             let is_unsigned = if let Type::Path(tp) = ty {
-                 tp.path.segments.last().map(|s| s.ident.to_string().starts_with('u')).unwrap_or(false)
-            } else { false };
-            
+                tp.path
+                    .segments
+                    .last()
+                    .map(|s| s.ident.to_string().starts_with('u'))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
             if is_unsigned {
-                 quote! {
+                quote! {
                     #name_str => {
                         Ok(ast::Int::from_u64(self.0.#name as u64))
                     }
                 }
             } else {
-                 quote! {
+                quote! {
                     #name_str => {
                         Ok(ast::Int::from_i64(self.0.#name as i64))
                     }
@@ -227,12 +260,12 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
 
                 // Create a field provider for this instance
                 struct FieldProvider<'a>(&'a #name);
-                
+
                 impl<'a> FieldValueProvider for FieldProvider<'a> {
                     fn get_field_z3(
                         &self,
                         field_name: &str
-                    ) -> Result<ast::Int, praborrow_prover::ProofError> {
+                    ) -> Result<ast::Int<'_>, praborrow_prover::ProofError> {
                         match field_name {
                             #(#field_match_arms)*
                             _ => Err(praborrow_prover::ProofError::ParseError(
