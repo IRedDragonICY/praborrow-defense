@@ -107,7 +107,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                                     
                                     runtime_checks.push(quote! {
                                         if !(#condition_tokens) {
-                                            panic!(#error_msg_lit);
+                                            return Err(#error_msg_lit.to_string());
                                         }
                                     });
                                 }
@@ -149,25 +149,38 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
     // Maps field names to Z3 AST values
     let field_match_arms: Vec<_> = all_fields.iter()
         .filter(|(_, ty)| is_integer_type(ty))
-        .map(|(name, _)| {
+        .map(|(name, ty)| {
             let name_str = name.to_string();
-            quote! {
-                #name_str => {
-                    Ok(z3::ast::Int::from_i64(ctx, self.#name as i64))
+            let is_unsigned = if let Type::Path(tp) = ty {
+                 tp.path.segments.last().map(|s| s.ident.to_string().starts_with('u')).unwrap_or(false)
+            } else { false };
+            
+            if is_unsigned {
+                 quote! {
+                    #name_str => {
+                        Ok(ast::Int::from_u64(ctx, self.0.#name as u64))
+                    }
+                }
+            } else {
+                 quote! {
+                    #name_str => {
+                        Ok(ast::Int::from_i64(ctx, self.0.#name as i64))
+                    }
                 }
             }
         })
         .collect();
 
     let expanded = quote! {
-        // Runtime check implementation (existing behavior)
+        // Runtime check implementation - returns Result instead of panicking
         impl CheckProtocol for #name {
-            fn enforce_law(&self) {
+            fn enforce_law(&self) -> Result<(), String> {
                 #(#runtime_checks)*
+                Ok(())
             }
         }
 
-        // Formal verification implementation (new behavior)
+        // Formal verification implementation
         impl praborrow_prover::ProveInvariant for #name {
             fn invariant_expressions() -> &'static [&'static str] {
                 static INVARIANTS: [&str; #invariant_count] = [#(#invariant_literals),*];
@@ -181,22 +194,22 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                 hasher.finalize().to_vec()
             }
 
-            fn verify_with_context<'ctx>(
+            fn verify_with_context(
                 &self,
-                ctx: &praborrow_prover::SmtContext<'ctx>
+                ctx: &praborrow_prover::SmtContext
             ) -> Result<praborrow_prover::VerificationToken, praborrow_prover::ProofError> {
-                use praborrow_prover::parser::{ExpressionParser, ExprKind, FieldValueProvider, Z3AstGenerator};
-                use z3::ast::Ast;
+                use praborrow_prover::parser::FieldValueProvider;
+                use praborrow_prover::{Context, ast};
 
                 // Create a field provider for this instance
-                struct FieldProvider<'a, T>(&'a T);
+                struct FieldProvider<'a>(&'a #name);
                 
-                impl<'a, 'ctx> FieldValueProvider<'ctx> for FieldProvider<'a, #name> {
+                impl<'a, 'ctx> FieldValueProvider<'ctx> for FieldProvider<'a> {
                     fn get_field_z3(
                         &self,
-                        ctx: &'ctx z3::Context,
+                        ctx: &'ctx Context,
                         field_name: &str
-                    ) -> Result<z3::ast::Int<'ctx>, praborrow_prover::ProofError> {
+                    ) -> Result<ast::Int<'ctx>, praborrow_prover::ProofError> {
                         match field_name {
                             #(#field_match_arms)*
                             _ => Err(praborrow_prover::ProofError::ParseError(
@@ -207,18 +220,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                 }
 
                 let provider = FieldProvider(self);
-                ctx.reset();
-
-                // Parse and assert each invariant
-                for invariant_str in Self::invariant_expressions() {
-                    let expr = ExpressionParser::parse(invariant_str)?;
-                    let mut generator = Z3AstGenerator::new(ctx.context(), &provider);
-                    let assertion = generator.generate(&expr)?;
-                    ctx.assert(&assertion);
-                }
-
-                // Check satisfiability
-                ctx.check()
+                ctx.verify_invariants(&provider, Self::invariant_expressions())
             }
         }
     };
