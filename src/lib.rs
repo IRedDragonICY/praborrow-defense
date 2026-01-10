@@ -90,9 +90,31 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                             // Parse the invariant condition expression directly
                             match meta_list.parse_args::<syn::Expr>() {
                                 Ok(expr) => {
-                                    let condition_tokens = quote! { #expr };
-                                    let condition_str = condition_tokens.to_string();
+                                    // Extract the invariant string and tokens
+                                    let (condition_str, condition_tokens) = if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(lit_str), .. }) = &expr {
+                                        let s = lit_str.value();
+                                        // For string literals, we must parse the content to get tokens for runtime check
+                                        match syn::parse_str::<syn::Expr>(&s) {
+                                            Ok(e) => (s, quote! { #e }),
+                                            Err(err) => {
+                                                return syn::Error::new_spanned(lit_str, format!("Syntax error in invariant string: {}", err))
+                                                    .to_compile_error()
+                                                    .into();
+                                            }
+                                        }
+                                    } else {
+                                        let tokens = quote! { #expr };
+                                        (tokens.to_string(), tokens)
+                                    };
                                     
+                                    // Validate invariant syntax at compile time
+                                    if let Err(e) = praborrow_prover::parser::ExpressionParser::parse(&condition_str) {
+                                        let err_msg = format!("Invalid invariant syntax: {}", e);
+                                        return syn::Error::new_spanned(&expr, err_msg)
+                                            .to_compile_error()
+                                            .into();
+                                    }
+
                                     field_invariants.push(condition_str.clone());
                                     invariant_strings.push(condition_str.clone());
                                     
