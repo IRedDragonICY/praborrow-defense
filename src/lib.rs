@@ -265,7 +265,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                     fn get_field_z3(
                         &self,
                         field_name: &str
-                    ) -> Result<ast::Int<'_>, praborrow_prover::ProofError> {
+                    ) -> Result<ast::Int, praborrow_prover::ProofError> {
                         match field_name {
                             #(#field_match_arms)*
                             _ => Err(praborrow_prover::ProofError::ParseError(
