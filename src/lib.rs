@@ -107,11 +107,13 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                                     
                                     runtime_checks.push(quote! {
                                         if !(#condition_tokens) {
-                                            return Err(#error_msg_lit.to_string());
+                                            return Err(praborrow_core::ConstitutionError::InvariantViolation(#error_msg_lit.to_string()));
                                         }
                                     });
                                 }
-                                _ => {}
+                                Err(e) => {
+                                    return TokenStream::from(e.to_compile_error());
+                                }
                             }
                         }
                     }
@@ -174,7 +176,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         // Runtime check implementation - returns Result instead of panicking
         impl CheckProtocol for #name {
-            fn enforce_law(&self) -> Result<(), String> {
+            fn enforce_law(&self) -> Result<(), praborrow_core::ConstitutionError> {
                 #(#runtime_checks)*
                 Ok(())
             }
