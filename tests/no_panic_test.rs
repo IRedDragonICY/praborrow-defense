@@ -15,7 +15,7 @@ fn test_no_panic() {
     let err = result.err().unwrap();
     assert!(
         err.to_string()
-            .contains("Invariant 'self.val > 10' breached")
+            .contains("Invariant violated: self.val > 10")
     );
 }
 
