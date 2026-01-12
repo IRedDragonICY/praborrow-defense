@@ -102,6 +102,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                     #[allow(clippy::collapsible_if)]
                     if meta_list.path.is_ident("invariant") {
                         // Parse the invariant condition expression directly
+                        // Parse the invariant condition expression directly
                         match meta_list.parse_args::<syn::Expr>() {
                             Ok(expr) => {
                                 // Extract the invariant string and tokens
@@ -132,7 +133,7 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                                         (tokens.to_string(), tokens)
                                     };
 
-                                // Validate invariant syntax at compile time
+                                // Validate invariant syntax at compile time using Prover Parser
                                 if let Err(e) = praborrow_prover::parser::ExpressionParser::parse(
                                     &condition_str,
                                 ) {
@@ -145,16 +146,13 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
                                 field_invariants.push(condition_str.clone());
                                 invariant_strings.push(condition_str.clone());
 
-                                let error_msg = format!(
-                                    "CONSTITUTIONAL CRISIS: Invariant '{}' breached.",
-                                    condition_str
-                                );
-                                let error_msg_lit =
-                                    syn::LitStr::new(&error_msg, proc_macro2::Span::call_site());
-
+                                // Correctly construct the new ConstitutionError structure
                                 runtime_checks.push(quote! {
                                         if !(#condition_tokens) {
-                                            return Err(praborrow_core::ConstitutionError::InvariantViolation(#error_msg_lit.to_string()));
+                                            return Err(praborrow_core::ConstitutionError::InvariantViolation {
+                                                expression: #condition_str.to_string(),
+                                                values: std::collections::BTreeMap::new(),
+                                            });
                                         }
                                     });
                             }
