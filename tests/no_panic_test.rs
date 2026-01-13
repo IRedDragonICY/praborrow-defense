@@ -1,3 +1,4 @@
+extern crate alloc;
 use praborrow_core::CheckProtocol;
 use praborrow_defense::Constitution;
 

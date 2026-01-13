@@ -213,13 +213,13 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
             if is_unsigned {
                 quote! {
                     #name_str => {
-                        Ok(ast::Int::from_u64(self.0.#name as u64))
+                        Ok(FieldValue::UInt(self.0.#name as u64))
                     }
                 }
             } else {
                 quote! {
                     #name_str => {
-                        Ok(ast::Int::from_i64(self.0.#name as i64))
+                        Ok(FieldValue::Int(self.0.#name as i64))
                     }
                 }
             }
@@ -243,38 +243,38 @@ pub fn derive_constitution(input: TokenStream) -> TokenStream {
             }
 
             fn compute_data_hash(&self) -> Vec<u8> {
-                use sha2::{Sha256, Digest};
+                use praborrow_prover::sha2::{Sha256, Digest};
                 let mut hasher = Sha256::new();
                 #(#hash_fields)*
                 hasher.finalize().to_vec()
             }
 
+            fn get_field_provider(&self) -> alloc::boxed::Box<dyn praborrow_prover::backend::FieldValueProvider + '_> {
+                 use praborrow_prover::backend::{FieldValueProvider, FieldValue};
+                 use praborrow_prover::ProofError;
+
+                 struct FieldProvider<'a>(&'a #name);
+
+                 impl<'a> FieldValueProvider for FieldProvider<'a> {
+                    fn get_field_value(&self, name: &str) -> Result<FieldValue, ProofError> {
+                        match name {
+                            #(#field_match_arms)*
+                            _ => Err(ProofError::ParseError(format!("Unknown field: {}", name))),
+                        }
+                    }
+                 }
+
+                 alloc::boxed::Box::new(FieldProvider(self))
+            }
+
             fn verify_with_context(
                 &self,
                 ctx: &praborrow_prover::SmtContext
-            ) -> Result<praborrow_prover::VerificationToken, praborrow_prover::ProofError> {
-                use praborrow_prover::parser::FieldValueProvider;
-                use praborrow_prover::ast;
-
-                // Create a field provider for this instance
-                struct FieldProvider<'a>(&'a #name);
-
-                impl<'a> FieldValueProvider for FieldProvider<'a> {
-                    fn get_field_z3(
-                        &self,
-                        field_name: &str
-                    ) -> Result<ast::Int, praborrow_prover::ProofError> {
-                        match field_name {
-                            #(#field_match_arms)*
-                            _ => Err(praborrow_prover::ProofError::ParseError(
-                                format!("Unknown field: {}", field_name)
-                            ))
-                        }
-                    }
+            ) -> impl core::future::Future<Output = Result<praborrow_prover::VerificationToken, praborrow_prover::ProofError>> + Send {
+                async move {
+                    let provider = self.get_field_provider();
+                    ctx.verify_invariants(&*provider, Self::invariant_expressions()).await
                 }
-
-                let provider = FieldProvider(self);
-                ctx.verify_invariants(&provider, Self::invariant_expressions())
             }
         }
     };
